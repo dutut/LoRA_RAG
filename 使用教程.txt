@@ -1,0 +1,18 @@
+# 使用默认源安装
+pip install -r requirements.txt
+
+# 或使用国内镜像源加速安装
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+项目目录结构
+your_project/
+├── gen_mock_data.py          # 已有：生成 mock 指令数据
+├── train_lora_mock.py        # 已有：QLoRA 训练 LoRA 模型
+├── data/
+│   ├── train_mock.jsonl
+│   └── eval_mock.jsonl
+├── docs/                     # 用来放知识库 txt 文件
+│   ├── kb_1.txt
+│   └── kb_2.txt
+├── build_faiss_index.py      # 新建：构建向量索引
+├── rag_model.py              # 新建：加载 LoRA 模型 + RAG 推理
+└── app.py                    # 新建：FastAPI HTTP 服务

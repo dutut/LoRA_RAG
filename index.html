@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>LoRA + RAG 智能问答控制台</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    /* 自定义滚动条稍微好看一点 */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f3f4f6;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5f5;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center">
+  <div class="w-full max-w-5xl mx-auto px-4 py-6">
+    <!-- 顶部标题栏 -->
+    <header class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 text-lg font-bold">
+            λ
+          </span>
+          LoRA + RAG 中文问答台
+        </h1>
+        <p class="text-sm text-slate-400 mt-1">
+          后端：Qwen2 LoRA 微调 + RAG（Faiss + rerank） · FastAPI 服务
+        </p>
+      </div>
+      <div class="hidden md:flex flex-col items-end text-xs text-slate-400">
+        <span>Backend: <code>http://127.0.0.1:8000/chat</code></span>
+        <span id="status-indicator" class="mt-1 inline-flex items-center gap-1">
+          <span class="h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span>未检测</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- 主卡片 -->
+    <main class="bg-slate-900/70 border border-slate-800 rounded-3xl shadow-xl shadow-black/40 backdrop-blur-xl flex flex-col h-[80vh]">
+      <!-- 聊天记录区 -->
+      <div id="chat-container" class="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <!-- 初始欢迎提示 -->
+        <div class="flex justify-center mt-2">
+          <div class="text-xs text-slate-400 bg-slate-800/70 border border-slate-700 rounded-full px-3 py-1 flex items-center gap-2">
+            <span class="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            已连接本地 LoRA + RAG 模型，试着问点业务问题吧～
+          </div>
+        </div>
+      </div>
+
+      <!-- 文档上下文折叠区 -->
+      <div id="context-panel" class="border-t border-slate-800 max-h-60 overflow-y-auto hidden">
+        <div class="px-4 py-2 flex items-center justify-between cursor-pointer select-none" id="context-header">
+          <span class="text-xs font-medium text-slate-300 flex items-center gap-2">
+            <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-300 text-[10px]">
+              R
+            </span>
+            使用到的文档片段
+          </span>
+          <span class="text-xs text-slate-500" id="context-toggle-text">点击折叠</span>
+        </div>
+        <div id="context-body" class="px-4 pb-3 space-y-2 text-xs text-slate-300">
+          <!-- 动态填充 -->
+        </div>
+      </div>
+
+      <!-- 输入区 -->
+      <div class="border-t border-slate-800 px-4 py-3">
+        <form id="chat-form" class="flex flex-col gap-2">
+          <div class="flex items-end gap-2">
+            <textarea
+              id="user-input"
+              rows="1"
+              placeholder="请输入你的问题，例如：我们的客服系统访问很慢，应该怎么排查？"
+              class="flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            ></textarea>
+            <button
+              type="submit"
+              id="send-btn"
+              class="inline-flex items-center justify-center rounded-2xl bg-indigo-500/90 px-4 py-2 text-sm font-medium text-white shadow-md shadow-indigo-500/30 hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <span id="send-btn-text">发送</span>
+              <svg id="send-icon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M2.94 2.94a1.5 1.5 0 0 0-.36 1.48l1.5 5a1.5 1.5 0 0 0 1.02 1.02l5 1.5a1.5 1.5 0 0 0 1.48-.36l4.5-4.5a1.5 1.5 0 0 0 0-2.12l-4.5-4.5a1.5 1.5 0 0 0-2.12 0l-4.5 4.5z" />
+              </svg>
+              <svg id="loading-icon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 hidden animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="flex justify-between text-[11px] text-slate-500">
+            <div>回车发送 · Shift+Enter 换行</div>
+            <div>基于本地知识库的 RAG 问答，仅用于学习和实验</div>
+          </div>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    const chatContainer = document.getElementById("chat-container");
+    const chatForm = document.getElementById("chat-form");
+    const userInput = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+    const sendBtnText = document.getElementById("send-btn-text");
+    const sendIcon = document.getElementById("send-icon");
+    const loadingIcon = document.getElementById("loading-icon");
+    const statusIndicator = document.getElementById("status-indicator");
+    const contextPanel = document.getElementById("context-panel");
+    const contextBody = document.getElementById("context-body");
+    const contextHeader = document.getElementById("context-header");
+    const contextToggleText = document.getElementById("context-toggle-text");
+
+    let contextCollapsed = false;
+
+    // 自动 textarea 高度
+    userInput.addEventListener("input", () => {
+      userInput.style.height = "auto";
+      userInput.style.height = userInput.scrollHeight + "px";
+    });
+
+    // Enter 发送，Shift+Enter 换行
+    userInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        chatForm.requestSubmit();
+      }
+    });
+
+    // 折叠/展开上下文面板
+    contextHeader.addEventListener("click", () => {
+      contextCollapsed = !contextCollapsed;
+      contextBody.classList.toggle("hidden", contextCollapsed);
+      contextToggleText.textContent = contextCollapsed ? "点击展开" : "点击折叠";
+    });
+
+    // 添加消息气泡
+    function addMessage(role, text) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "flex " + (role === "user" ? "justify-end" : "justify-start");
+
+      const bubble = document.createElement("div");
+      bubble.className =
+        "max-w-[80%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed " +
+        (role === "user"
+          ? "bg-indigo-500/90 text-white rounded-br-sm shadow-md shadow-indigo-500/30"
+          : "bg-slate-800/90 text-slate-50 rounded-bl-sm border border-slate-700/60");
+
+      bubble.textContent = text;
+      wrapper.appendChild(bubble);
+      chatContainer.appendChild(wrapper);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // 显示/隐藏 loading 状态
+    function setLoading(isLoading) {
+      sendBtn.disabled = isLoading;
+      if (isLoading) {
+        sendBtnText.textContent = "生成中";
+        sendIcon.classList.add("hidden");
+        loadingIcon.classList.remove("hidden");
+      } else {
+        sendBtnText.textContent = "发送";
+        sendIcon.classList.remove("hidden");
+        loadingIcon.classList.add("hidden");
+      }
+    }
+
+    // 更新状态指示（健康检查）
+    async function checkHealth() {
+      try {
+        const res = await fetch(API_BASE + "/health");
+        if (res.ok) {
+          statusIndicator.innerHTML =
+            '<span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span><span>后端在线</span>';
+        } else {
+          statusIndicator.innerHTML =
+            '<span class="h-2 w-2 rounded-full bg-rose-400 animate-pulse"></span><span>健康检查失败</span>';
+        }
+      } catch (e) {
+        statusIndicator.innerHTML =
+          '<span class="h-2 w-2 rounded-full bg-rose-400 animate-pulse"></span><span>无法连接后端</span>';
+      }
+    }
+
+    // 提交表单 -> 调用 /chat
+    chatForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const query = userInput.value.trim();
+      if (!query) return;
+
+      addMessage("user", query);
+      userInput.value = "";
+      userInput.style.height = "auto";
+
+      setLoading(true);
+
+      try {
+        const res = await fetch(API_BASE + "/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("API Error:", res.status, text);
+          addMessage("assistant", "请求失败（" + res.status + "），请检查后端日志。");
+        } else {
+          const data = await res.json();
+          addMessage("assistant", data.answer || "模型未返回答案。");
+
+          // 渲染上下文文档
+          if (Array.isArray(data.contexts) && data.contexts.length > 0) {
+            contextBody.innerHTML = "";
+            data.contexts.forEach((ctx, idx) => {
+              const block = document.createElement("div");
+              block.className = "bg-slate-800/60 border border-slate-700/70 rounded-2xl px-3 py-2";
+              block.innerHTML =
+                '<div class="text-[11px] text-slate-400 mb-1">文档片段 ' +
+                (idx + 1) +
+                "</div>" +
+                '<div class="text-[12px] text-slate-100 whitespace-pre-wrap leading-relaxed">' +
+                ctx.replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+                "</div>";
+              contextBody.appendChild(block);
+            });
+            contextPanel.classList.remove("hidden");
+            contextBody.classList.remove("hidden");
+            contextCollapsed = false;
+            contextToggleText.textContent = "点击折叠";
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        addMessage("assistant", "调用后端接口出错，请确认 FastAPI 服务是否已启动。");
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    // 页面加载完自动做一次健康检查
+    window.addEventListener("load", () => {
+      checkHealth();
+    });
+  </script>
+</body>
+</html>
