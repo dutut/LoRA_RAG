@@ -97,4 +97,86 @@ python app.py
 
 ---
 
-如果你希望我把 `README.md` 中的某个部分扩展为更详细的操作指南（例如：把 `train_lora_mock.py` 的命令行参数与示例命令写清楚，或给出 `app.py` 的端到端演示流程），告诉我你想先完善哪一部分，我会继续更新。
+
+**`app.py` 端到端演示流程**
+
+下面给出从环境准备到调用 API 的一步步示例，适用于在本地调试和演示。`app.py` 提供了两个 HTTP 接口：`GET /health`（健康检查）和 `POST /chat`（发送用户 query，返回生成答案与检索出的上下文）。`/chat` 的返回格式为 `{"answer": str, "contexts": [str]}`，并带有 60 秒缓存。
+
+1) 前提
+- 已按照 `requirements.txt` 安装依赖并激活虚拟环境。
+- 已准备好必要的模型与索引（例如 `qwen2-mock-lora/` 下的权重和 `faiss_index/index.faiss`），否则 `rag_model_new.generate_answer` 可能无法正常工作或加载很慢。
+
+2) 启动服务（在仓库根执行，Windows PowerShell）
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+说明：`uvicorn` 会把 FastAPI 应用暴露为 `http://localhost:8000`。你也可以改端口或去掉 `--reload`（生产环境不要使用 `--reload`）。
+
+3) 检查服务是否就绪
+
+在浏览器或命令行打开健康检查：
+
+```powershell
+Invoke-RestMethod -Uri http://localhost:8000/health -Method Get
+# 或使用 curl: curl http://localhost:8000/health
+```
+
+预期返回：
+
+```json
+{"status": "ok"}
+```
+
+4) 使用内置 Swagger UI（交互式测试）
+
+打开 http://localhost:8000/docs 可以看到 `/chat` 的请求/响应示例，直接在页面上输入 `query` 并执行请求以测试模型。
+
+5) 示例请求（命令行）
+
+- 使用 `curl`：
+
+```powershell
+curl -X POST "http://localhost:8000/chat" -H "Content-Type: application/json" -d '{"query":"什么是 LoRA？"}'
+```
+
+- 使用 PowerShell 原生方法：
+
+```powershell
+$body = @{ query = "什么是 LoRA？" } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:8000/chat -Method Post -Body $body -ContentType "application/json"
+```
+
+预期响应示例：
+
+```json
+{
+	"answer": "LoRA（Low-Rank Adaptation）是一种对大型语言模型进行参数高效微调的方法，...",
+	"contexts": ["来自知识库的片段 1", "来自知识库的片段 2"]
+}
+```
+
+6) 前端使用提示（`index.html`）
+
+如果你想在浏览器中用本地静态页面调用 `/chat`：
+
+- 建议把 `index.html` 作为静态文件由 HTTP 服务托管（避免 file:// 限制与跨域问题）。一个简单方式是在仓库根启动轻量静态服务器：
+
+```powershell
+# 在仓库根（或包含 index.html 的目录）运行：
+python -m http.server 8001
+# 然后在浏览器打开 http://localhost:8001/index.html
+```
+
+- 由于 `app.py` 已配置 CORS（开发环境允许所有来源），只要服务地址正确，前端页面就能通过 fetch 调用 `http://localhost:8000/chat`。
+
+7) 常见问题与排查
+- 启动很慢或报错：检查模型权重路径（`qwen2-mock-lora/`）和 `faiss_index/index.faiss` 是否存在；模型加载通常耗时且需要较大内存/显存。
+- 返回空上下文或检索结果差：确认 `faiss_index/index.faiss` 是用与 `rag_model_new` 相同的 embedding 方法构建的。
+- `CORS` 错误：确保 `app.py` 正在运行且允许来自前端页面的来源（默认已允许 `*`）。如果前端托管在不同端口，请在浏览器控制台查看具体错误。
+
+---
+
+
